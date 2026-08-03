@@ -17,11 +17,11 @@
         "url": "https://github.com/Luka967/OgarII/issues"
     },
     "engines": {
-        "node": ">=18"
+        "node": ">=18",
+        "npm": ">=8"
     },
     "dependencies": {
         "dotenv": "^10.0.0",
-        "request": "^2.88.2",
         "ws": "^8.18.3"
     }
 }
