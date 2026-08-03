@@ -6,7 +6,6 @@ const WebSocketServer = WebSocket.Server;
 // const uws = require('uWebSockets.js');
 // const app = uws.App();
 const url = require('url');
-const request = require('request');
 const Connection = require('./Connection');
 const ChatChannel = require('./ChatChannel');
 const { filterIPAddress } = require('../primitives/Misc');
@@ -274,22 +273,31 @@ class Listener {
 			const url_parts = url.parse(req.url, true);
 			const query = url_parts.query;
 			const secret_key = process.env.RECAPTCHA_SECRET_KEY || '';
-			const verify_url = 'https://www.google.com/recaptcha/api/siteverify?secret=' + secret_key + '&response=' + query.token;
+			const verifyUrl = new URL('https://www.google.com/recaptcha/api/siteverify');
+			verifyUrl.searchParams.set('secret', secret_key);
+			verifyUrl.searchParams.set('response', query.token || '');
+			const controller = new AbortController();
+			const timeout = setTimeout(() => controller.abort(), 5000);
 
-			request(verify_url, { json: true }, (error, response, body) => {
-				if (!error && response.statusCode === 200) {
+			fetch(verifyUrl, { signal: controller.signal })
+				.then(response => {
+					if (!response.ok) throw new Error(`HTTP ${response.status}`);
+					return response.json();
+				})
+				.then(body => {
 					if (body.success === false) {
 						const errorCodes = Array.isArray(body['error-codes']) ? body['error-codes'].join(',') : 'unknown';
-						this.logger.onAccess(`IP '${newConnection.remoteAddress}' Token '${query.token}' Error '${errorCodes}' failed recaptcha`);
+						this.logger.onAccess(`IP '${newConnection.remoteAddress}' Error '${errorCodes}' failed recaptcha`);
 						newConnection.closeSocket(1003, "Failed recaptcha verification clientside");
 					} else {
-						newConnection.verifyScore = body.score
+						newConnection.verifyScore = body.score;
 					}
-				} else {
-					this.logger.onAccess(`IP '${newConnection.remoteAddress}' Token '${query.token}' Error '${error}' failed recaptcha`);
-					newConnection.closeSocket(1003, "Failed reacaptha verification serverside");
-				}
-			});
+				})
+				.catch(error => {
+					this.logger.onAccess(`IP '${newConnection.remoteAddress}' Error '${error.message}' failed recaptcha`);
+					newConnection.closeSocket(1003, "Failed recaptcha verification serverside");
+				})
+				.finally(() => clearTimeout(timeout));
 		}
 	}
 
